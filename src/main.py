@@ -299,7 +299,7 @@ def calc_world_parameters(img, left_fit, right_fit, ploty):
     color = (255, 255, 0)
     corner1 = (10, 30)
     corner2 = (10, 60)
-    thickness = 1
+    thickness = 2
     font_scale = 2
     img = cv2.putText(img, radius_info, corner1, font, font_scale, color, thickness, cv2.LINE_AA)
     img = cv2.putText(img, distance_info, corner2, font, font_scale, color, thickness, cv2.LINE_AA)
@@ -329,7 +329,7 @@ def draw_lane_plane(img, left_fitx, right_fitx, Minv):
 
 # test the pipeline here
 images = '../data/camera_cal/calibration*.jpg'
-test_img_name = '../data/test_images/straight_lines2.jpg'
+test_img_name = '../data/test_images/test1.jpg'
 undistorted_img_name = '../data/output_images/undostorted.jpg'
 bin_img_name = '../data/output_images/thresholded.jpg'
 warped_img_name = '../data/output_images/warped.jpg'
@@ -352,7 +352,7 @@ calc_world_parameters(img_w_plane, left_fit, right_fit, ploty)
 # plt.show()
 # plt.imshow(undist_img)
 # plt.show()
-undist_img = cv2.cvtColor(undist_img, cv2.COLOR_RGB2BGR)
-cv2.imwrite(undistorted_img_name, undist_img)
-cv2.imwrite(bin_img_name, binary_img * 255)
-cv2.imwrite(warped_img_name, warped * 255)
+# undist_img = cv2.cvtColor(undist_img, cv2.COLOR_RGB2BGR)
+# cv2.imwrite(undistorted_img_name, undist_img)
+# cv2.imwrite(bin_img_name, binary_img * 255)
+# cv2.imwrite(warped_img_name, warped * 255)

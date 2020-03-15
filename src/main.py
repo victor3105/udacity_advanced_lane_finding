@@ -122,6 +122,7 @@ def warp(bin_img):
 
 
 def find_lines(warped):
+    # find line pixels from scratch
     histogram = np.sum(warped[warped.shape[0] // 2:, :], axis=0)
     out_img = np.dstack((warped, warped, warped))
     # Find the peak of the left and right halves of the histogram
@@ -199,9 +200,9 @@ def find_lines(warped):
     return leftx, lefty, rightx, righty, out_img
 
 
-def fit_polynomial(warped):
+def fit_polynomial(warped, leftx, lefty, rightx, righty, find_lines_out_img):
     # Find our lane pixels first
-    leftx, lefty, rightx, righty, out_img = find_lines(warped)
+    # leftx, lefty, rightx, righty, out_img = find_lines(warped)
 
     left_fit = np.polyfit(lefty, leftx, 2)
     right_fit = np.polyfit(righty, rightx, 2)
@@ -219,14 +220,62 @@ def fit_polynomial(warped):
 
     ## Visualization ##
     # Colors in the left and right lane regions
-    out_img[lefty, leftx] = [255, 0, 0]
-    out_img[righty, rightx] = [0, 0, 255]
+    find_lines_out_img[lefty, leftx] = [255, 0, 0]
+    find_lines_out_img[righty, rightx] = [0, 0, 255]
 
+    plt.imshow(find_lines_out_img)
     # Plots the left and right polynomials on the lane lines
     plt.plot(left_fitx, ploty, color='yellow')
     plt.plot(right_fitx, ploty, color='yellow')
+    plt.show()
 
-    return out_img
+    return left_fit, right_fit, ploty
+
+
+def search_around_poly(warped, left_fit, right_fit, find_lines_out_img):
+    # HYPERPARAMETER
+    # Choose the width of the margin around the previous polynomial to search
+    # The quiz grader expects 100 here, but feel free to tune on your own!
+    margin = 100
+
+    # Grab activated pixels
+    nonzero = warped.nonzero()
+    nonzeroy = np.array(nonzero[0])
+    nonzerox = np.array(nonzero[1])
+
+    left_win_low = left_fit[0] * nonzeroy ** 2 + left_fit[1] * nonzeroy + left_fit[2] - margin
+    left_win_high = left_fit[0] * nonzeroy ** 2 + left_fit[1] * nonzeroy + left_fit[2] + margin
+    right_win_low = right_fit[0] * nonzeroy ** 2 + right_fit[1] * nonzeroy + right_fit[2] - margin
+    right_win_high = right_fit[0] * nonzeroy ** 2 + right_fit[1] * nonzeroy + right_fit[2] + margin
+    left_lane_inds = (nonzerox > left_win_low) & (nonzerox < left_win_high)
+    right_lane_inds = (nonzerox > right_win_low) & (nonzerox < right_win_high)
+
+    # Again, extract left and right line pixel positions
+    leftx = nonzerox[left_lane_inds]
+    lefty = nonzeroy[left_lane_inds]
+    rightx = nonzerox[right_lane_inds]
+    righty = nonzeroy[right_lane_inds]
+
+    # Fit new polynomials
+    left_fitx, right_fitx, ploty = fit_polynomial(warped, leftx, lefty, rightx, righty, find_lines_out_img)
+
+    return left_fitx, right_fitx, ploty
+
+
+def calc_curvature(left_fitx, right_fitx, ploty):
+    y_scale = 30 / 720
+    x_scale = 3.7 / 700
+
+    # y coordinate where the curvature radius will be calculated
+    y = np.max(ploty)
+
+    left_curverad = (1 + (2 * left_fitx[0] * y * y_scale + left_fitx[1]) ** 2) ** (3 / 2) \
+                    / np.abs(2 * left_fitx[0])
+    right_curverad = (1 + (2 * right_fitx[0] * y * y_scale + right_fitx[1]) ** 2) ** (3 / 2)\
+                     / np.abs(2 * right_fitx[0])
+
+    return left_curverad, right_curverad
+
 
 # test the pipeline here
 images = '../data/camera_cal/calibration*.jpg'
@@ -239,9 +288,8 @@ mtx, dist = calibrate_camera(images)
 undist_img = undistort(mtx, dist, test_img_name)
 binary_img = threshold(undist_img)
 warped = warp(binary_img)
-curves = fit_polynomial(warped)
-plt.imshow(curves)
-plt.show()
+leftx, lefty, rightx, righty, out_img = find_lines(warped)
+fit_polynomial(warped, leftx, lefty, rightx, righty, out_img)
 # fig, axs = plt.subplots(2)
 # axs[0].imshow(warped)
 # axs[1].plot(histogram)

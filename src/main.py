@@ -265,7 +265,7 @@ def search_around_poly(warped, left_fit, right_fit, find_lines_out_img):
     return left_fit, right_fit, ploty, left_fitx, right_fitx
 
 
-def calc_curvature(img, left_fit, right_fit, ploty):
+def calc_world_parameters(img, left_fit, right_fit, ploty):
     y_scale = 30 / 720
     x_scale = 3.7 / 700
 
@@ -277,27 +277,34 @@ def calc_curvature(img, left_fit, right_fit, ploty):
     right_curverad = (1 + (2 * right_fit[0] * y * y_scale + right_fit[1]) ** 2) ** (3 / 2)\
                      / np.abs(2 * right_fit[0])
 
-    # use 2 decimal digits
-    left_curverad = round(left_curverad * 100) / 100
-    right_curverad = round(right_curverad * 100) / 100
+    x_left = left_fit[0] * y ** 2 + left_fit[1] * y + left_fit[2]
+    x_right = right_fit[0] * y ** 2 + right_fit[1] * y + right_fit[2]
+    lane_center = np.mean([x_left, x_right])
+    img_center = img.shape[1] // 2
+    distance_info = 'Vehicle is '
+    distance = round((img_center - lane_center) * x_scale * 100) / 100
+    if distance > 0:
+        distance_info += str(distance) + ' m right of center'
+    else:
+        distance_info += str(abs(distance)) + ' m left of center'
 
-    output1 = 'Left curvature rad.: ' + str(left_curverad) + ' m'
-    output2 = 'Right curvature rad.: ' + str(right_curverad) + ' m'
+
+    curve_rad = np.mean([left_curverad, right_curverad])
+
+    # use 2 decimal digits
+    curve_rad = round(curve_rad * 100) / 100
+
+    radius_info = 'Radius of curvature: ' + str(curve_rad) + ' m'
     font = cv2.FONT_HERSHEY_PLAIN
-    color = (255, 0, 0)
+    color = (255, 255, 0)
     corner1 = (10, 30)
-    corner2 = (10, 70)
-    thickness = 2
+    corner2 = (10, 60)
+    thickness = 1
     font_scale = 2
-    img = cv2.putText(img, output1, corner1, font, font_scale, color, thickness, cv2.LINE_AA)
-    img = cv2.putText(img, output2, corner2, font, font_scale, color, thickness, cv2.LINE_AA)
-    # img = cv2.cvtColor(img_w_plane, cv2.COLOR_RGB2BGR)
-    # cv2.imshow('res', img)
-    # cv2.waitKey()
+    img = cv2.putText(img, radius_info, corner1, font, font_scale, color, thickness, cv2.LINE_AA)
+    img = cv2.putText(img, distance_info, corner2, font, font_scale, color, thickness, cv2.LINE_AA)
     plt.imshow(img)
     plt.show()
-
-    return left_curverad, right_curverad
 
 
 def draw_lane_plane(img, left_fitx, right_fitx, Minv):
@@ -334,9 +341,7 @@ warped, Minv = warp(binary_img)
 leftx, lefty, rightx, righty, out_img = find_lines(warped)
 left_fit, right_fit, ploty, left_fitx, right_fitx = fit_polynomial(warped, leftx, lefty, rightx, righty, out_img)
 img_w_plane = draw_lane_plane(undist_img, left_fitx, right_fitx, Minv)
-left_rad, right_rad = calc_curvature(img_w_plane, left_fit, right_fit, ploty)
-print(left_rad)
-print(right_rad)
+calc_world_parameters(img_w_plane, left_fit, right_fit, ploty)
 
 # plt.imshow(img)
 # plt.show()

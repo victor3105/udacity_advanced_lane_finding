@@ -33,11 +33,8 @@ def calibrate_camera(images_path):
     return mtx, dist
 
 
-def undistort(mtx, dist, frame_path):
-    test_img_name = frame_path
-    test_img = mpimg.imread(test_img_name)
-
-    undist = cv2.undistort(test_img, mtx, dist, None, mtx)
+def undistort(mtx, dist, img):
+    undist = cv2.undistort(img, mtx, dist, None, mtx)
 
     return undist
 
@@ -287,8 +284,6 @@ def calc_world_parameters(img, left_fit, right_fit, ploty):
         distance_info += str(distance) + ' m right of center'
     else:
         distance_info += str(abs(distance)) + ' m left of center'
-
-
     curve_rad = np.mean([left_curverad, right_curverad])
 
     # use 2 decimal digits
@@ -307,8 +302,8 @@ def calc_world_parameters(img, left_fit, right_fit, ploty):
     plt.show()
 
 
-def draw_lane_plane(img, left_fitx, right_fitx, Minv):
-    warp_zero = np.zeros_like(warped).astype(np.uint8)
+def draw_lane_plane(img, left_fitx, right_fitx, ploty, Minv):
+    warp_zero = np.zeros_like(img[:, :, 0]).astype(np.uint8)
     color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
 
     # Recast the x and y points into usable format for cv2.fillPoly()
@@ -327,21 +322,48 @@ def draw_lane_plane(img, left_fitx, right_fitx, Minv):
     # plt.imshow(result)
     # plt.show()
 
-# test the pipeline here
+
+def process_frame(frame, frame_number, prev_left_fit, prev_right_fit):
+    mtx = None
+    dist = None
+    if frame_number == 0:
+        mtx, dist = calibrate_camera('../data/camera_cal/calibration*.jpg')
+    undist_img = undistort(mtx, dist, frame)
+    binary_img = threshold(undist_img)
+    warped, Minv = warp(binary_img)
+    out_img = np.zeros_like(frame)  # placeholder
+    if frame_number == 0:
+        leftx, lefty, rightx, righty, out_img = find_lines(warped)
+        left_fit, right_fit, ploty, left_fitx, right_fitx = fit_polynomial(warped, leftx, lefty, rightx, righty, out_img)
+    left_fit, right_fit, ploty, left_fitx, right_fitx = search_around_poly(warped, prev_left_fit, prev_right_fit, out_img)
+    img_w_plane = draw_lane_plane(undist_img, left_fitx, right_fitx, ploty, Minv)
+    calc_world_parameters(img_w_plane, left_fit, right_fit, ploty)
+
+    return left_fit, right_fit
+
+# #test the pipeline here
 images = '../data/camera_cal/calibration*.jpg'
 test_img_name = '../data/test_images/test1.jpg'
 undistorted_img_name = '../data/output_images/undostorted.jpg'
 bin_img_name = '../data/output_images/thresholded.jpg'
 warped_img_name = '../data/output_images/warped.jpg'
 
-mtx, dist = calibrate_camera(images)
-undist_img = undistort(mtx, dist, test_img_name)
-binary_img = threshold(undist_img)
-warped, Minv = warp(binary_img)
-leftx, lefty, rightx, righty, out_img = find_lines(warped)
-left_fit, right_fit, ploty, left_fitx, right_fitx = fit_polynomial(warped, leftx, lefty, rightx, righty, out_img)
-img_w_plane = draw_lane_plane(undist_img, left_fitx, right_fitx, Minv)
-calc_world_parameters(img_w_plane, left_fit, right_fit, ploty)
+test_img = mpimg.imread(test_img_name)
+
+prev_l_fit = np.array([0, 0, 0])
+prev_r_fit = np.array([0, 0, 0])
+for i in range(1):
+    prev_l_fit, prev_r_fit = process_frame(test_img, i, prev_l_fit, prev_r_fit)
+
+#
+# mtx, dist = calibrate_camera(images)
+# undist_img = undistort(mtx, dist, test_img)
+# binary_img = threshold(undist_img)
+# warped, Minv = warp(binary_img)
+# leftx, lefty, rightx, righty, out_img = find_lines(warped)
+# left_fit, right_fit, ploty, left_fitx, right_fitx = fit_polynomial(warped, leftx, lefty, rightx, righty, out_img)
+# img_w_plane = draw_lane_plane(undist_img, left_fitx, right_fitx, ploty, Minv)
+# calc_world_parameters(img_w_plane, left_fit, right_fit, ploty)
 
 # plt.imshow(img)
 # plt.show()

@@ -112,13 +112,14 @@ def warp(bin_img):
          [x4_dst, y4_dst]])
 
     M = cv2.getPerspectiveTransform(src, dst)
+    Minv = cv2.getPerspectiveTransform(dst, src)
     warped = cv2.warpPerspective(bin_img, M, img_size, flags=cv2.INTER_LINEAR)
     # check if the coordinates are correct
-    color_img = np.dstack((bin_img, np.zeros_like(bin_img), np.zeros_like(bin_img))) * 255
-    color_img = cv2.polylines(color_img, [src_draw], True, (0, 255, 0))
-    cv2.imshow('src', color_img)
-    cv2.waitKey()
-    return warped
+    # color_img = np.dstack((bin_img, np.zeros_like(bin_img), np.zeros_like(bin_img))) * 255
+    # color_img = cv2.polylines(color_img, [src_draw], True, (0, 255, 0))
+    # cv2.imshow('src', color_img)
+    # cv2.waitKey()
+    return warped, Minv
 
 
 def find_lines(warped):
@@ -218,18 +219,20 @@ def fit_polynomial(warped, leftx, lefty, rightx, righty, find_lines_out_img):
         left_fitx = 1 * ploty ** 2 + 1 * ploty
         right_fitx = 1 * ploty ** 2 + 1 * ploty
 
-    ## Visualization ##
-    # Colors in the left and right lane regions
-    find_lines_out_img[lefty, leftx] = [255, 0, 0]
-    find_lines_out_img[righty, rightx] = [0, 0, 255]
+    # ## Visualization ##
+    # # Colors in the left and right lane regions
+    # find_lines_out_img[lefty, leftx] = [255, 0, 0]
+    # find_lines_out_img[righty, rightx] = [0, 0, 255]
+    #
+    # plt.imshow(find_lines_out_img)
+    # # Plots the left and right polynomials on the lane lines
+    # plt.plot(left_fitx, ploty, color='yellow')
+    # plt.plot(right_fitx, ploty, color='yellow')
+    # plt.show()
 
-    plt.imshow(find_lines_out_img)
-    # Plots the left and right polynomials on the lane lines
-    plt.plot(left_fitx, ploty, color='yellow')
-    plt.plot(right_fitx, ploty, color='yellow')
-    plt.show()
 
-    return left_fit, right_fit, ploty
+
+    return left_fit, right_fit, ploty, left_fitx, right_fitx
 
 
 def search_around_poly(warped, left_fit, right_fit, find_lines_out_img):
@@ -257,25 +260,65 @@ def search_around_poly(warped, left_fit, right_fit, find_lines_out_img):
     righty = nonzeroy[right_lane_inds]
 
     # Fit new polynomials
-    left_fitx, right_fitx, ploty = fit_polynomial(warped, leftx, lefty, rightx, righty, find_lines_out_img)
+    left_fit, right_fit, ploty, left_fitx, right_fitx = fit_polynomial(warped, leftx, lefty, rightx, righty, find_lines_out_img)
 
-    return left_fitx, right_fitx, ploty
+    return left_fit, right_fit, ploty, left_fitx, right_fitx
 
 
-def calc_curvature(left_fitx, right_fitx, ploty):
+def calc_curvature(img, left_fit, right_fit, ploty):
     y_scale = 30 / 720
     x_scale = 3.7 / 700
 
     # y coordinate where the curvature radius will be calculated
     y = np.max(ploty)
 
-    left_curverad = (1 + (2 * left_fitx[0] * y * y_scale + left_fitx[1]) ** 2) ** (3 / 2) \
-                    / np.abs(2 * left_fitx[0])
-    right_curverad = (1 + (2 * right_fitx[0] * y * y_scale + right_fitx[1]) ** 2) ** (3 / 2)\
-                     / np.abs(2 * right_fitx[0])
+    left_curverad = (1 + (2 * left_fit[0] * y * y_scale + left_fit[1]) ** 2) ** (3 / 2) \
+                    / np.abs(2 * left_fit[0])
+    right_curverad = (1 + (2 * right_fit[0] * y * y_scale + right_fit[1]) ** 2) ** (3 / 2)\
+                     / np.abs(2 * right_fit[0])
+
+    # use 2 decimal digits
+    left_curverad = round(left_curverad * 100) / 100
+    right_curverad = round(right_curverad * 100) / 100
+
+    output1 = 'Left curvature rad.: ' + str(left_curverad) + ' m'
+    output2 = 'Right curvature rad.: ' + str(right_curverad) + ' m'
+    font = cv2.FONT_HERSHEY_PLAIN
+    color = (255, 0, 0)
+    corner1 = (10, 30)
+    corner2 = (10, 70)
+    thickness = 2
+    font_scale = 2
+    img = cv2.putText(img, output1, corner1, font, font_scale, color, thickness, cv2.LINE_AA)
+    img = cv2.putText(img, output2, corner2, font, font_scale, color, thickness, cv2.LINE_AA)
+    # img = cv2.cvtColor(img_w_plane, cv2.COLOR_RGB2BGR)
+    # cv2.imshow('res', img)
+    # cv2.waitKey()
+    plt.imshow(img)
+    plt.show()
 
     return left_curverad, right_curverad
 
+
+def draw_lane_plane(img, left_fitx, right_fitx, Minv):
+    warp_zero = np.zeros_like(warped).astype(np.uint8)
+    color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
+
+    # Recast the x and y points into usable format for cv2.fillPoly()
+    pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
+    pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
+    pts = np.hstack((pts_left, pts_right))
+
+    # Draw the lane onto the warped blank image
+    cv2.fillPoly(color_warp, np.int_([pts]), (0, 255, 0))
+
+    # Warp the blank back to original image space using inverse perspective matrix (Minv)
+    newwarp = cv2.warpPerspective(color_warp, Minv, (img.shape[1], img.shape[0]))
+    # Combine the result with the original image
+    result = cv2.addWeighted(img, 1, newwarp, 0.3, 0)
+    return result
+    # plt.imshow(result)
+    # plt.show()
 
 # test the pipeline here
 images = '../data/camera_cal/calibration*.jpg'
@@ -287,9 +330,17 @@ warped_img_name = '../data/output_images/warped.jpg'
 mtx, dist = calibrate_camera(images)
 undist_img = undistort(mtx, dist, test_img_name)
 binary_img = threshold(undist_img)
-warped = warp(binary_img)
+warped, Minv = warp(binary_img)
 leftx, lefty, rightx, righty, out_img = find_lines(warped)
-fit_polynomial(warped, leftx, lefty, rightx, righty, out_img)
+left_fit, right_fit, ploty, left_fitx, right_fitx = fit_polynomial(warped, leftx, lefty, rightx, righty, out_img)
+img_w_plane = draw_lane_plane(undist_img, left_fitx, right_fitx, Minv)
+left_rad, right_rad = calc_curvature(img_w_plane, left_fit, right_fit, ploty)
+print(left_rad)
+print(right_rad)
+
+# plt.imshow(img)
+# plt.show()
+
 # fig, axs = plt.subplots(2)
 # axs[0].imshow(warped)
 # axs[1].plot(histogram)

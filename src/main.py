@@ -338,6 +338,30 @@ def process_frame(frame, frame_number, prev_left_fit, prev_right_fit, mtx, dist)
 
     return left_fit, right_fit, res
 
+
+class Line():
+    def __init__(self):
+        # was the line detected in the last iteration?
+        self.detected = False
+        # x values of the last n fits of the line
+        self.recent_xfitted = []
+        #average x values of the fitted line over the last n iterations
+        self.bestx = None
+        #polynomial coefficients averaged over the last n iterations
+        self.best_fit = None
+        #polynomial coefficients for the most recent fit
+        self.current_fit = [np.array([False])]
+        #radius of curvature of the line in some units
+        self.radius_of_curvature = None
+        #distance in meters of vehicle center from the line
+        self.line_base_pos = None
+        #difference in fit coefficients between last and new fits
+        self.diffs = np.array([0,0,0], dtype='float')
+        #x values for detected line pixels
+        self.allx = None
+        #y values for detected line pixels
+        self.ally = None  
+
 # #test the pipeline here
 images = '../data/camera_cal/calibration*.jpg'
 test_img_name = '../data/test_images/test1.jpg'
@@ -350,9 +374,9 @@ test_img = mpimg.imread(test_img_name)
 prev_l_fit = np.array([0, 0, 0])
 prev_r_fit = np.array([0, 0, 0])
 mtx, dist = calibrate_camera('../data/camera_cal/calibration*.jpg')
-input_video_name = '../data/project_video.mp4'
+input_video_name = '../data/harder_challenge_video.mp4'
 vidcap = cv2.VideoCapture(input_video_name)
-output_video_name = '../data/out.mp4'
+output_video_name = '../data/out_challenge_harder.mp4'
 success, frame = vidcap.read()
 out = cv2.VideoWriter(output_video_name, cv2.VideoWriter_fourcc(*'mp4v'), 25, (frame.shape[1], frame.shape[0]))
 count = 0

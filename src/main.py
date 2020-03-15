@@ -3,6 +3,7 @@ import cv2
 import glob
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
+from moviepy.editor import VideoFileClip
 
 
 def calibrate_camera(images_path):
@@ -17,7 +18,7 @@ def calibrate_camera(images_path):
     for fname in images:
         img = mpimg.imread(fname)
 
-        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
         ret, corners = cv2.findChessboardCorners(gray, (9, 6), None)
 
@@ -28,7 +29,7 @@ def calibrate_camera(images_path):
             # img = cv2.drawChessboardCorners(img, (9, 6), corners, ret)
 
     image0 = mpimg.imread(images[0])
-    gray = cv2.cvtColor(image0, cv2.COLOR_RGB2GRAY)
+    gray = cv2.cvtColor(image0, cv2.COLOR_BGR2GRAY)
     ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
     return mtx, dist
 
@@ -42,7 +43,7 @@ def undistort(mtx, dist, img):
 def threshold(img, s_thresh=(160, 255), sx_thresh=(50, 100)):
     img = np.copy(img)
     # Convert to HLS color space and separate the V channel
-    hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
+    hls = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
     l_channel = hls[:, :, 1]
     s_channel = hls[:, :, 2]
     # Sobel x
@@ -298,8 +299,7 @@ def calc_world_parameters(img, left_fit, right_fit, ploty):
     font_scale = 2
     img = cv2.putText(img, radius_info, corner1, font, font_scale, color, thickness, cv2.LINE_AA)
     img = cv2.putText(img, distance_info, corner2, font, font_scale, color, thickness, cv2.LINE_AA)
-    plt.imshow(img)
-    plt.show()
+    return img
 
 
 def draw_lane_plane(img, left_fitx, right_fitx, ploty, Minv):
@@ -319,15 +319,9 @@ def draw_lane_plane(img, left_fitx, right_fitx, ploty, Minv):
     # Combine the result with the original image
     result = cv2.addWeighted(img, 1, newwarp, 0.3, 0)
     return result
-    # plt.imshow(result)
-    # plt.show()
 
 
-def process_frame(frame, frame_number, prev_left_fit, prev_right_fit):
-    mtx = None
-    dist = None
-    if frame_number == 0:
-        mtx, dist = calibrate_camera('../data/camera_cal/calibration*.jpg')
+def process_frame(frame, frame_number, prev_left_fit, prev_right_fit, mtx, dist):
     undist_img = undistort(mtx, dist, frame)
     binary_img = threshold(undist_img)
     warped, Minv = warp(binary_img)
@@ -335,11 +329,14 @@ def process_frame(frame, frame_number, prev_left_fit, prev_right_fit):
     if frame_number == 0:
         leftx, lefty, rightx, righty, out_img = find_lines(warped)
         left_fit, right_fit, ploty, left_fitx, right_fitx = fit_polynomial(warped, leftx, lefty, rightx, righty, out_img)
-    left_fit, right_fit, ploty, left_fitx, right_fitx = search_around_poly(warped, prev_left_fit, prev_right_fit, out_img)
+    else:
+        left_fit, right_fit, ploty, left_fitx, right_fitx = search_around_poly(warped, prev_left_fit, prev_right_fit, out_img)
     img_w_plane = draw_lane_plane(undist_img, left_fitx, right_fitx, ploty, Minv)
-    calc_world_parameters(img_w_plane, left_fit, right_fit, ploty)
+    res = calc_world_parameters(img_w_plane, left_fit, right_fit, ploty)
+    # cv2.imshow('res', res)
+    # cv2.waitKey()
 
-    return left_fit, right_fit
+    return left_fit, right_fit, res
 
 # #test the pipeline here
 images = '../data/camera_cal/calibration*.jpg'
@@ -352,8 +349,25 @@ test_img = mpimg.imread(test_img_name)
 
 prev_l_fit = np.array([0, 0, 0])
 prev_r_fit = np.array([0, 0, 0])
-for i in range(1):
-    prev_l_fit, prev_r_fit = process_frame(test_img, i, prev_l_fit, prev_r_fit)
+mtx, dist = calibrate_camera('../data/camera_cal/calibration*.jpg')
+input_video_name = '../data/project_video.mp4'
+vidcap = cv2.VideoCapture(input_video_name)
+output_video_name = '../data/out.mp4'
+success, frame = vidcap.read()
+out = cv2.VideoWriter(output_video_name, cv2.VideoWriter_fourcc(*'mp4v'), 25, (frame.shape[1], frame.shape[0]))
+count = 0
+while success:
+    prev_l_fit, prev_r_fit, res = process_frame(frame, count, prev_l_fit, prev_r_fit, mtx, dist)
+    out.write(res)
+    success, frame = vidcap.read()
+    count += 1
+
+out.release()
+
+# for i in range(1):
+#     prev_l_fit, prev_r_fit, res = process_frame(test_img, i, prev_l_fit, prev_r_fit)
+#     plt.imshow(res)
+#     plt.show()
 
 #
 # mtx, dist = calibrate_camera(images)

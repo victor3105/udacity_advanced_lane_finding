@@ -263,7 +263,7 @@ def search_around_poly(warped, left_fit, right_fit, find_lines_out_img):
     return left_fit, right_fit, ploty, left_fitx, right_fitx
 
 
-def calc_world_parameters(img, left_fit, right_fit, ploty):
+def calc_world_parameters(img, left_fit, right_fit, ploty, left_line, right_line):
     y_scale = 30 / 720
     x_scale = 3.7 / 700
 
@@ -285,7 +285,15 @@ def calc_world_parameters(img, left_fit, right_fit, ploty):
         distance_info += str(distance) + ' m right of center'
     else:
         distance_info += str(abs(distance)) + ' m left of center'
-    curve_rad = np.mean([left_curverad, right_curverad])
+    # curve_rad = np.mean([left_curverad, right_curverad])
+    if len(left_line.radius_of_curvature) == 10:
+        left_line.radius_of_curvature.pop()
+        right_line.radius_of_curvature.pop()
+    left_line.radius_of_curvature.append(left_curverad)
+    right_line.radius_of_curvature.append(right_curverad)
+    left_rad = np.mean(left_line.radius_of_curvature)
+    right_rad = np.mean(right_line.radius_of_curvature)
+    curve_rad = np.mean([left_rad, right_rad])
 
     # use 2 decimal digits
     curve_rad = round(curve_rad * 100) / 100
@@ -321,7 +329,7 @@ def draw_lane_plane(img, left_fitx, right_fitx, ploty, Minv):
     return result
 
 
-def process_frame(frame, frame_number, prev_left_fit, prev_right_fit, mtx, dist):
+def process_frame(frame, frame_number, prev_left_fit, prev_right_fit, mtx, dist, left_line, right_line):
     undist_img = undistort(mtx, dist, frame)
     binary_img = threshold(undist_img)
     warped, Minv = warp(binary_img)
@@ -332,7 +340,7 @@ def process_frame(frame, frame_number, prev_left_fit, prev_right_fit, mtx, dist)
     else:
         left_fit, right_fit, ploty, left_fitx, right_fitx = search_around_poly(warped, prev_left_fit, prev_right_fit, out_img)
     img_w_plane = draw_lane_plane(undist_img, left_fitx, right_fitx, ploty, Minv)
-    res = calc_world_parameters(img_w_plane, left_fit, right_fit, ploty)
+    res = calc_world_parameters(img_w_plane, left_fit, right_fit, ploty, left_line, right_line)
     # cv2.imshow('res', res)
     # cv2.waitKey()
 
@@ -352,7 +360,7 @@ class Line():
         #polynomial coefficients for the most recent fit
         self.current_fit = [np.array([False])]
         #radius of curvature of the line in some units
-        self.radius_of_curvature = None
+        self.radius_of_curvature = []
         #distance in meters of vehicle center from the line
         self.line_base_pos = None
         #difference in fit coefficients between last and new fits
@@ -360,7 +368,7 @@ class Line():
         #x values for detected line pixels
         self.allx = None
         #y values for detected line pixels
-        self.ally = None  
+        self.ally = None
 
 # #test the pipeline here
 images = '../data/camera_cal/calibration*.jpg'
@@ -374,14 +382,17 @@ test_img = mpimg.imread(test_img_name)
 prev_l_fit = np.array([0, 0, 0])
 prev_r_fit = np.array([0, 0, 0])
 mtx, dist = calibrate_camera('../data/camera_cal/calibration*.jpg')
-input_video_name = '../data/harder_challenge_video.mp4'
+input_video_name = '../data/project_video.mp4'
 vidcap = cv2.VideoCapture(input_video_name)
-output_video_name = '../data/out_challenge_harder.mp4'
+output_video_name = '../data/out_1.mp4'
 success, frame = vidcap.read()
 out = cv2.VideoWriter(output_video_name, cv2.VideoWriter_fourcc(*'mp4v'), 25, (frame.shape[1], frame.shape[0]))
 count = 0
+left_line = Line()
+right_line = Line()
 while success:
-    prev_l_fit, prev_r_fit, res = process_frame(frame, count, prev_l_fit, prev_r_fit, mtx, dist)
+    print('Processing frame ' + str(count))
+    prev_l_fit, prev_r_fit, res = process_frame(frame, count, prev_l_fit, prev_r_fit, mtx, dist, left_line, right_line)
     out.write(res)
     success, frame = vidcap.read()
     count += 1

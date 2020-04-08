@@ -3,10 +3,14 @@ import cv2
 import glob
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
-from moviepy.editor import VideoFileClip
 
 
 def calibrate_camera(images_path):
+    '''
+    Perform camera calibration
+    :param images_path: path to chessboard images
+    :return: mtx: camera matrix; dist: distortion coefficients
+    '''
     images = glob.glob(images_path)
 
     objpoints = []
@@ -35,12 +39,27 @@ def calibrate_camera(images_path):
 
 
 def undistort(mtx, dist, img):
+    '''
+    Perform current frame undistortion
+    :param mtx: camera matrix
+    :param dist: distortion coefficients
+    :param img: frame to be distorted
+    :return: undist - undistorted image
+    '''
     undist = cv2.undistort(img, mtx, dist, None, mtx)
 
     return undist
 
 
-def threshold(img, s_thresh=(160, 255), sx_thresh=(50, 100)):
+# 160 255 50 100
+def threshold(img, s_thresh=(160, 255), sx_thresh=(40, 100)):
+    '''
+    Perform image binarization using saturation and Sobel edges
+    :param img: image to binarize
+    :param s_thresh: saturation range for binarization
+    :param sx_thresh: gradient value range for binarization
+    :return: combined_binary: binarized image
+    '''
     img = np.copy(img)
     # Convert to HLS color space and separate the V channel
     hls = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
@@ -66,48 +85,21 @@ def threshold(img, s_thresh=(160, 255), sx_thresh=(50, 100)):
 
 
 def warp(bin_img):
-    # src coordinates for perspective transform
-    x1 = 180
-    y1 = bin_img.shape[0]
-    x2 = 590
-    y2 = 450
-    x3 = 690
-    y3 = 450
-    x4 = 1150
-    y4 = bin_img.shape[0]
-    src = np.float32(
-        [[x1, y1],
-         [x2, y2],
-         [x3, y3],
-         [x4, y4]])
-
-    # dst coords
-    x1_dst = 350
-    y1_dst = bin_img.shape[0]
-    x2_dst = 350
-    y2_dst = 0
-    x3_dst = 950
-    y3_dst = 0
-    x4_dst = 950
-    y4_dst = bin_img.shape[0]
-    dst = np.float32(
-        [[x1_dst, y1_dst],
-         [x2_dst, y2_dst],
-         [x3_dst, y3_dst],
-         [x4_dst, y4_dst]])
-
+    '''
+    Transform image to bird-eye view
+    :param bin_img: binary image to be processed
+    :return: warped: transformed image; Minv: matrix for inverse perspectiveTransformation (for visualization)
+    '''
+    src = np.float32([[490, 482], [810, 482],
+                      [1250, 720], [40, 720]])
+    dst = np.float32([[0, 0], [1280, 0],
+                      [1250, 720], [40, 720]])
     img_size = (bin_img.shape[1], bin_img.shape[0])
 
-    src_draw = np.array(
-        [[x1, y1],
-         [x2, y2],
-         [x3, y3],
-         [x4, y4]])
-    dst_draw = np.array(
-        [[x1_dst, y1_dst],
-         [x2_dst, y2_dst],
-         [x3_dst, y3_dst],
-         [x4_dst, y4_dst]])
+    src_draw = np.array([[490, 482], [810, 482],
+                        [1250, 720], [40, 720]])
+    dst_draw = np.array([[0, 0], [1280, 0],
+                        [1250, 720], [40, 720]])
 
     M = cv2.getPerspectiveTransform(src, dst)
     Minv = cv2.getPerspectiveTransform(dst, src)
@@ -121,6 +113,15 @@ def warp(bin_img):
 
 
 def find_lines(warped):
+    '''
+    Find lane lines using sliding windows method
+    :param warped: transformed bird-eye image
+    :return: leftx: x coordinates of left line pixels
+    lefty: y coordinates of left line pixels
+    rightx: x coordinates of right line pixels
+    righty: y coordinates of right line pixels
+    out_img: image for visualization of lines search
+    '''
     # find line pixels from scratch
     histogram = np.sum(warped[warped.shape[0] // 2:, :], axis=0)
     out_img = np.dstack((warped, warped, warped))
@@ -200,6 +201,21 @@ def find_lines(warped):
 
 
 def fit_polynomial(warped, leftx, lefty, rightx, righty, find_lines_out_img):
+    '''
+    Fit curves to the detected lines
+    :param warped: warped image
+    :param leftx: x coordinates of left line pixels
+    :param lefty: y coordinates of left line pixels
+    :param rightx: x coordinates of right line pixels
+    :param righty: y coordinates of right line pixels
+    :param find_lines_out_img: image from the previous step (for visualization)
+    :return:
+    left_fit: polynomial coefficients for the left line
+    right_fit: polynomial coefficients for the right line
+    ploty: y coordinates for calculation of x values
+    left_fitx: calculated x coordinates of the left line
+    right_fitx: calculated x coordinates of the right line
+    '''
     # Find our lane pixels first
     # leftx, lefty, rightx, righty, out_img = find_lines(warped)
 
@@ -228,12 +244,25 @@ def fit_polynomial(warped, leftx, lefty, rightx, righty, find_lines_out_img):
     # plt.plot(right_fitx, ploty, color='yellow')
     # plt.show()
 
-
-
     return left_fit, right_fit, ploty, left_fitx, right_fitx
 
 
-def search_around_poly(warped, left_fit, right_fit, find_lines_out_img):
+def search_around_poly(warped, left_fit, right_fit, find_lines_out_img, left_line, right_line):
+    '''
+    Fit lines around the previously found lines
+    :param warped: warped (bird-eye) image
+    :param left_fit: polynomial coefficients for the left line
+    :param right_fit: polynomial coefficients for the right line
+    :param find_lines_out_img: image for visualization
+    :param left_line: instance of Line class for parameters averaging and smoothing over iterations
+    :param right_line: instance of Line class for parameters averaging and smoothing over iterations
+    :return:
+    left_fit_m: average of polynomial coefficients
+    right_fit_m: average of polynomial coefficients
+    ploty: set of y values (from top to bottom)
+    left_fitx: calculated x values for the left line
+    right_fitx: calculated x values for the right line
+    '''
     # HYPERPARAMETER
     # Choose the width of the margin around the previous polynomial to search
     # The quiz grader expects 100 here, but feel free to tune on your own!
@@ -259,11 +288,29 @@ def search_around_poly(warped, left_fit, right_fit, find_lines_out_img):
 
     # Fit new polynomials
     left_fit, right_fit, ploty, left_fitx, right_fitx = fit_polynomial(warped, leftx, lefty, rightx, righty, find_lines_out_img)
+    if len(left_line.best_fit) == 15:
+        left_line.best_fit.pop()
+        right_line.best_fit.pop()
+    left_line.best_fit.append(left_fit)
+    right_line.best_fit.append(right_fit)
+    left_fit_m = np.mean(left_line.best_fit, axis=0)
+    right_fit_m = np.mean(right_line.best_fit, axis=0)
 
-    return left_fit, right_fit, ploty, left_fitx, right_fitx
+    return left_fit_m, right_fit_m, ploty, left_fitx, right_fitx
 
 
 def calc_world_parameters(img, left_fit, right_fit, ploty, left_line, right_line):
+    '''
+    Calculate radius of curvature of the lines and distance to the lane center
+    and show this information in output image
+    :param img:
+    :param left_fit:
+    :param right_fit:
+    :param ploty:
+    :param left_line:
+    :param right_line:
+    :return:
+    '''
     y_scale = 30 / 720
     x_scale = 3.7 / 700
 
@@ -277,16 +324,20 @@ def calc_world_parameters(img, left_fit, right_fit, ploty, left_line, right_line
 
     x_left = left_fit[0] * y ** 2 + left_fit[1] * y + left_fit[2]
     x_right = right_fit[0] * y ** 2 + right_fit[1] * y + right_fit[2]
+
+    # calculate the lane center x-coordinate
     lane_center = np.mean([x_left, x_right])
+    # we suppose that camera is installed in the center of the vehicle
     img_center = img.shape[1] // 2
     distance_info = 'Vehicle is '
+    # thus, the distance from the car center to the lane center is:
     distance = round((img_center - lane_center) * x_scale * 100) / 100
     if distance > 0:
         distance_info += str(distance) + ' m right of center'
     else:
         distance_info += str(abs(distance)) + ' m left of center'
-    # curve_rad = np.mean([left_curverad, right_curverad])
-    if len(left_line.radius_of_curvature) == 10:
+    # fine average values over several iterations (frames)
+    if len(left_line.radius_of_curvature) == 40:
         left_line.radius_of_curvature.pop()
         right_line.radius_of_curvature.pop()
     left_line.radius_of_curvature.append(left_curverad)
@@ -311,6 +362,16 @@ def calc_world_parameters(img, left_fit, right_fit, ploty, left_line, right_line
 
 
 def draw_lane_plane(img, left_fitx, right_fitx, ploty, Minv):
+    '''
+    Draw lane plane in output image in green
+    :param img: image to draw in
+    :param left_fitx: x coordinates of the left line
+    :param right_fitx: x coordinates of the right line
+    :param ploty: y values
+    :param Minv: inverse transform camera matrix
+    :return:
+    result: the output image
+    '''
     warp_zero = np.zeros_like(img[:, :, 0]).astype(np.uint8)
     color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
 
@@ -330,15 +391,32 @@ def draw_lane_plane(img, left_fitx, right_fitx, ploty, Minv):
 
 
 def process_frame(frame, frame_number, prev_left_fit, prev_right_fit, mtx, dist, left_line, right_line):
+    '''
+    Perform all the processing steps on current frame
+    :param frame: frame to process
+    :param frame_number: the number of the current frame
+    :param prev_left_fit: previous value of the polynomial coefficients
+    :param prev_right_fit: previous value of the polynomial coefficients
+    :param mtx: camera matrix
+    :param dist: distortion coefficients
+    :param left_line: Lane class instance to keep left line parameters
+    :param right_line: Lane class instance to keep right line parameters
+    :return:
+    left_fit: averaged polynomial coefficients for the left line
+    right_fit: averaged polynomial coefficients for the right line
+    res: output image
+    '''
     undist_img = undistort(mtx, dist, frame)
     binary_img = threshold(undist_img)
     warped, Minv = warp(binary_img)
+    # plt.imshow(warped)
+    # plt.show()
     out_img = np.zeros_like(frame)  # placeholder
     if frame_number == 0:
         leftx, lefty, rightx, righty, out_img = find_lines(warped)
         left_fit, right_fit, ploty, left_fitx, right_fitx = fit_polynomial(warped, leftx, lefty, rightx, righty, out_img)
     else:
-        left_fit, right_fit, ploty, left_fitx, right_fitx = search_around_poly(warped, prev_left_fit, prev_right_fit, out_img)
+        left_fit, right_fit, ploty, left_fitx, right_fitx = search_around_poly(warped, prev_left_fit, prev_right_fit, out_img, left_line, right_line)
     img_w_plane = draw_lane_plane(undist_img, left_fitx, right_fitx, ploty, Minv)
     res = calc_world_parameters(img_w_plane, left_fit, right_fit, ploty, left_line, right_line)
     # cv2.imshow('res', res)
@@ -349,30 +427,15 @@ def process_frame(frame, frame_number, prev_left_fit, prev_right_fit, mtx, dist,
 
 class Line():
     def __init__(self):
-        # was the line detected in the last iteration?
-        self.detected = False
-        # x values of the last n fits of the line
-        self.recent_xfitted = []
-        #average x values of the fitted line over the last n iterations
-        self.bestx = None
         #polynomial coefficients averaged over the last n iterations
-        self.best_fit = None
-        #polynomial coefficients for the most recent fit
-        self.current_fit = [np.array([False])]
+        self.best_fit = []
         #radius of curvature of the line in some units
         self.radius_of_curvature = []
-        #distance in meters of vehicle center from the line
-        self.line_base_pos = None
-        #difference in fit coefficients between last and new fits
-        self.diffs = np.array([0,0,0], dtype='float')
-        #x values for detected line pixels
-        self.allx = None
-        #y values for detected line pixels
-        self.ally = None
 
 # #test the pipeline here
 images = '../data/camera_cal/calibration*.jpg'
 test_img_name = '../data/test_images/test1.jpg'
+calib_undist_name = '../data/output_images/calib_undist.jpg'
 undistorted_img_name = '../data/output_images/undostorted.jpg'
 bin_img_name = '../data/output_images/thresholded.jpg'
 warped_img_name = '../data/output_images/warped.jpg'
@@ -381,18 +444,26 @@ test_img = mpimg.imread(test_img_name)
 
 prev_l_fit = np.array([0, 0, 0])
 prev_r_fit = np.array([0, 0, 0])
+# calibrate camera
 mtx, dist = calibrate_camera('../data/camera_cal/calibration*.jpg')
+# calib_0 = cv2.imread('../data/camera_cal/calibration3.jpg')
+# undist_calib_img = undistort(mtx, dist, calib_0)
+# cv2.imwrite(calib_undist_name, undist_calib_img)
 input_video_name = '../data/project_video.mp4'
 vidcap = cv2.VideoCapture(input_video_name)
 output_video_name = '../data/out_1.mp4'
+# open the input video
 success, frame = vidcap.read()
+# create the output video
 out = cv2.VideoWriter(output_video_name, cv2.VideoWriter_fourcc(*'mp4v'), 25, (frame.shape[1], frame.shape[0]))
 count = 0
 left_line = Line()
 right_line = Line()
 while success:
+    # process input frames
     print('Processing frame ' + str(count))
     prev_l_fit, prev_r_fit, res = process_frame(frame, count, prev_l_fit, prev_r_fit, mtx, dist, left_line, right_line)
+    # write the output frame
     out.write(res)
     success, frame = vidcap.read()
     count += 1
